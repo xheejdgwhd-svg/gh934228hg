@@ -14,7 +14,7 @@ from flask import Flask
 # === НАСТРОЙКИ ===
 DISCORD_CHANNEL_ID = "1407975317682917457"
 DISCORD_USER_TOKEN = os.getenv('DISCORD_TOKEN')
-TELEGRAM_TOKEN = "7475034097:AAFjp49HnyX1Iv6CYGuCmKeUD67ujAjEBWA"
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 
 # === НОВЫЕ НАСТРОЙКИ ДЛЯ ПОДПИСКИ ===
 CHANNEL_USERNAME = "@PlantsVersusBrainrotsSTOCK"
@@ -505,3 +505,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
