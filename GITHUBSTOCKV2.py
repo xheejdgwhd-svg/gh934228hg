@@ -40,16 +40,6 @@ last_restock_time = None
 last_message_id = None
 user_chat_ids = set()
 
-USERS_FILE = "users.json"
-
-telegram_app = Application.builder().token(TELEGRAM_TOKEN).build()
-telegram_bot = telegram_app.bot
-
-keyboard = ReplyKeyboardMarkup(
-    [[KeyboardButton("🎯УЗНАТЬ СТОК🎯")]],
-    resize_keyboard=True
-)
-
 # === FLASK ДЛЯ RENDER ===
 app = Flask(__name__)
 
@@ -67,6 +57,44 @@ def run_flask():
 # Запускаем Flask в отдельном потоке
 flask_thread = threading.Thread(target=run_flask, daemon=True)
 flask_thread.start()
+
+# === СОХРАНЕНИЕ ПОЛЬЗОВАТЕЛЕЙ В ПЕРЕМЕННЫХ ОКРУЖЕНИЯ ===
+def save_users():
+    """Сохраняет список пользователей в переменную окружения"""
+    try:
+        users_data = json.dumps({'users': list(user_chat_ids)})
+        os.environ['BOT_USERS'] = users_data
+        print(f"💾 Сохранено {len(user_chat_ids)} пользователей в переменные окружения")
+    except Exception as e:
+        print(f"❌ Ошибка сохранения пользователей: {e}")
+
+def load_users():
+    """Загружает список пользователей из переменной окружения"""
+    global user_chat_ids
+    try:
+        users_data = os.getenv('BOT_USERS')
+        if users_data:
+            data = json.loads(users_data)
+            user_chat_ids = set(data.get('users', []))
+            print(f"📊 Загружено {len(user_chat_ids)} пользователей из переменных окружения")
+    except Exception as e:
+        print(f"❌ Ошибка загрузки пользователей: {e}")
+        user_chat_ids = set()
+
+def add_user(chat_id):
+    """Добавляет пользователя в список"""
+    if chat_id not in user_chat_ids:
+        user_chat_ids.add(chat_id)
+        save_users()
+        print(f"👤 Добавлен новый пользователь: {chat_id}")
+
+telegram_app = Application.builder().token(TELEGRAM_TOKEN).build()
+telegram_bot = telegram_app.bot
+
+keyboard = ReplyKeyboardMarkup(
+    [[KeyboardButton("🎯УЗНАТЬ СТОК🎯")]],
+    resize_keyboard=True
+)
 
 async def check_subscription(user_id):
     try:
@@ -157,32 +185,6 @@ async def handle_subscription_check(update: Update, context: ContextTypes.DEFAUL
             "❌ Подписка не найдена. Пожалуйста, подпишитесь на канал и попробуйте снова.\n\n" + text,
             reply_markup=reply_markup
         )
-
-def load_users():
-    global user_chat_ids
-    try:
-        if os.path.exists(USERS_FILE):
-            with open(USERS_FILE, 'r') as f:
-                data = json.load(f)
-                user_chat_ids = set(data.get('users', []))
-                print(f"📊 Загружено {len(user_chat_ids)} пользователей")
-    except Exception as e:
-        print(f"❌ Ошибка загрузки пользователей: {e}")
-        user_chat_ids = set()
-
-def save_users():
-    try:
-        with open(USERS_FILE, 'w') as f:
-            json.dump({'users': list(user_chat_ids)}, f)
-        print(f"💾 Сохранено {len(user_chat_ids)} пользователей")
-    except Exception as e:
-        print(f"❌ Ошибка сохранения пользователей: {e}")
-
-def add_user(chat_id):
-    if chat_id not in user_chat_ids:
-        user_chat_ids.add(chat_id)
-        save_users()
-        print(f"👤 Добавлен новый пользователь: {chat_id}")
 
 def get_latest_discord_message():
     headers = {
@@ -505,4 +507,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
