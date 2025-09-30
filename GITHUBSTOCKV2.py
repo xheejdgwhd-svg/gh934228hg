@@ -456,5 +456,6 @@ def main():
     
     run_telegram_bot()
 
+# === ФИКС ДЛЯ RENDER ===
 if __name__ == "__main__":
     main()
