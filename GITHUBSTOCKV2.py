@@ -9,11 +9,12 @@ import re
 from datetime import datetime, timedelta
 import json
 import os
+from flask import Flask
 
 # === НАСТРОЙКИ ===
 DISCORD_CHANNEL_ID = "1407975317682917457"
 DISCORD_USER_TOKEN = os.getenv('DISCORD_TOKEN')
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+TELEGRAM_TOKEN = "7475034097:AAFjp49HnyX1Iv6CYGuCmKeUD67ujAjEBWA"
 
 # === НОВЫЕ НАСТРОЙКИ ДЛЯ ПОДПИСКИ ===
 CHANNEL_USERNAME = "@PlantsVersusBrainrotsSTOCK"
@@ -48,6 +49,24 @@ keyboard = ReplyKeyboardMarkup(
     [[KeyboardButton("🎯УЗНАТЬ СТОК🎯")]],
     resize_keyboard=True
 )
+
+# === FLASK ДЛЯ RENDER ===
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+@app.route('/health')
+def health():
+    return "OK", 200
+
+def run_flask():
+    app.run(host='0.0.0.0', port=5000)
+
+# Запускаем Flask в отдельном потоке
+flask_thread = threading.Thread(target=run_flask, daemon=True)
+flask_thread.start()
 
 async def check_subscription(user_id):
     try:
@@ -442,11 +461,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Используй кнопку для проверки стока 🎯", reply_markup=keyboard)
 
 def run_telegram_bot():
-    telegram_app.add_handler(CommandHandler("start", start_command))
-    telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    telegram_app.add_handler(CallbackQueryHandler(handle_subscription_check, pattern="check_subscription"))
-    print("📱 Запускаем Telegram бота...")
-    telegram_app.run_polling()
+    max_restarts = 3
+    restart_count = 0
+    
+    while restart_count < max_restarts:
+        try:
+            # Пересоздаем application при каждом перезапуске
+            telegram_app = Application.builder().token(TELEGRAM_TOKEN).build()
+            
+            telegram_app.add_handler(CommandHandler("start", start_command))
+            telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+            telegram_app.add_handler(CallbackQueryHandler(handle_subscription_check, pattern="check_subscription"))
+            
+            print(f"📱 Запускаем Telegram бота (попытка {restart_count + 1}/{max_restarts})...")
+            telegram_app.run_polling()
+            
+        except telegram.error.Conflict as e:
+            restart_count += 1
+            print(f"❌ Conflict ошибка: {e}")
+            if restart_count < max_restarts:
+                print("🔄 Перезапускаем бота через 10 секунд...")
+                time.sleep(10)
+            else:
+                print("🚨 Достигнут лимит перезапусков")
+                break
+                
+        except Exception as e:
+            print(f"❌ Критическая ошибка: {e}")
+            break
+    
+    print("💤 Бот завершил работу")
 
 def main():
     print("🚀 Запускаем бота...")
@@ -458,24 +502,6 @@ def main():
     discord_thread.start()
     
     run_telegram_bot()
-
-# === ФИКС ДЛЯ RENDER - ПОРТ ===
-from flask import Flask
-import threading
-
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Bot is running!"
-
-def run_flask():
-    app.run(host='0.0.0.0', port=5000)
-
-# Запускаем Flask в отдельном потоке (не мешает боту)
-flask_thread = threading.Thread(target=run_flask, daemon=True)
-flask_thread.start()
-# === КОНЕЦ ФИКСА ===
 
 if __name__ == "__main__":
     main()
