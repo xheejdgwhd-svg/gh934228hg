@@ -342,10 +342,13 @@ def monitor_discord():
                                 
                                 print("🚀 Запускаем рассылку всем пользователям...")
                                 
-                                loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(loop)
-                                loop.run_until_complete(send_telegram_alert_to_all(telegram_message))
-                                loop.close()
+                                try:
+                                    loop = asyncio.new_event_loop()
+                                    asyncio.set_event_loop(loop)
+                                    loop.run_until_complete(send_telegram_alert_to_all(telegram_message))
+                                    loop.close()
+                                except Exception as e:
+                                    print(f"❌ Ошибка отправки уведомлений: {e}")
                                 
                             else:
                                 print("📭 В embed нет данных о растениях")
@@ -456,6 +459,23 @@ def main():
     
     run_telegram_bot()
 
-# === ФИКС ДЛЯ RENDER ===
+# === ФИКС ДЛЯ RENDER - ПОРТ ===
+from flask import Flask
+import threading
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=5000)
+
+# Запускаем Flask в отдельном потоке (не мешает боту)
+flask_thread = threading.Thread(target=run_flask, daemon=True)
+flask_thread.start()
+# === КОНЕЦ ФИКСА ===
+
 if __name__ == "__main__":
     main()
