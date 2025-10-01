@@ -40,46 +40,46 @@ last_restock_time = None
 last_message_id = None
 user_chat_ids = set()
 
-# === FLASK ДЛЯ RENDER ===
+# Файл для сохранения chat_id
+USERS_FILE = "users.json"
+
+# === FLASK СЕРВЕР ===
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot is running!"
+    return "Bot is alive!"
 
 @app.route('/health')
 def health():
     return "OK", 200
 
 def run_flask():
-    app.run(host='0.0.0.0', port=5000)
+    port = int(os.environ.get('PORT', 8080))  # Фикс порта
+    app.run(host='0.0.0.0', port=port)
 
-# Запускаем Flask в отдельном потоке
-flask_thread = threading.Thread(target=run_flask, daemon=True)
-flask_thread.start()
-
-# === СОХРАНЕНИЕ ПОЛЬЗОВАТЕЛЕЙ В ПЕРЕМЕННЫХ ОКРУЖЕНИЯ ===
-def save_users():
-    """Сохраняет список пользователей в переменную окружения"""
-    try:
-        users_data = json.dumps({'users': list(user_chat_ids)})
-        os.environ['BOT_USERS'] = users_data
-        print(f"💾 Сохранено {len(user_chat_ids)} пользователей в переменные окружения")
-    except Exception as e:
-        print(f"❌ Ошибка сохранения пользователей: {e}")
-
+# === СОХРАНЕНИЕ ПОЛЬЗОВАТЕЛЕЙ В ФАЙЛ ===
 def load_users():
-    """Загружает список пользователей из переменной окружения"""
+    """Загружает список пользователей из файла"""
     global user_chat_ids
     try:
-        users_data = os.getenv('BOT_USERS')
-        if users_data:
-            data = json.loads(users_data)
-            user_chat_ids = set(data.get('users', []))
-            print(f"📊 Загружено {len(user_chat_ids)} пользователей из переменных окружения")
+        if os.path.exists(USERS_FILE):
+            with open(USERS_FILE, 'r') as f:
+                data = json.load(f)
+                user_chat_ids = set(data.get('users', []))
+                print(f"📊 Загружено {len(user_chat_ids)} пользователей")
     except Exception as e:
         print(f"❌ Ошибка загрузки пользователей: {e}")
         user_chat_ids = set()
+
+def save_users():
+    """Сохраняет список пользователей в файл"""
+    try:
+        with open(USERS_FILE, 'w') as f:
+            json.dump({'users': list(user_chat_ids)}, f)
+        print(f"💾 Сохранено {len(user_chat_ids)} пользователей")
+    except Exception as e:
+        print(f"❌ Ошибка сохранения пользователей: {e}")
 
 def add_user(chat_id):
     """Добавляет пользователя в список"""
@@ -88,6 +88,7 @@ def add_user(chat_id):
         save_users()
         print(f"👤 Добавлен новый пользователь: {chat_id}")
 
+# === TELEGRAM БОТ ===
 telegram_app = Application.builder().token(TELEGRAM_TOKEN).build()
 telegram_bot = telegram_app.bot
 
@@ -96,7 +97,9 @@ keyboard = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+# === ФУНКЦИИ ПРОВЕРКИ ПОДПИСКИ ===
 async def check_subscription(user_id):
+    """Проверяет, подписан ли пользователь на канал"""
     try:
         member = await telegram_bot.get_chat_member(CHANNEL_ID, user_id)
         if member.status in ['member', 'administrator', 'creator']:
@@ -108,6 +111,7 @@ async def check_subscription(user_id):
         return True
 
 def create_subscription_message():
+    """Создает сообщение с кнопками для подписки"""
     text = """
 🔒 Для доступа к стоку нужно подписаться на канал. В канале все уведомления о новостях Plants Vs Brainrots
 
@@ -125,6 +129,7 @@ def create_subscription_message():
     return text, keyboard
 
 async def show_current_stock(user_id, context):
+    """Показывает текущий сток пользователю"""
     print("🎯 Показываем сток пользователю после подтверждения подписки")
     
     latest_message = get_latest_discord_message()
@@ -164,6 +169,7 @@ async def show_current_stock(user_id, context):
         )
 
 async def handle_subscription_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обрабатывает проверку подписки"""
     query = update.callback_query
     await query.answer()
     
@@ -186,7 +192,9 @@ async def handle_subscription_check(update: Update, context: ContextTypes.DEFAUL
             reply_markup=reply_markup
         )
 
+# === DISCORD МОНИТОРИНГ ===
 def get_latest_discord_message():
+    """Получает последнее сообщение из Discord канала"""
     headers = {
         'Authorization': DISCORD_USER_TOKEN,
         'Content-Type': 'application/json',
@@ -207,6 +215,7 @@ def get_latest_discord_message():
         return None
 
 def convert_to_msk(discord_time_str):
+    """Конвертирует время из Discord в МСК"""
     try:
         if "@" in discord_time_str:
             date_part, time_part = discord_time_str.split('@')
@@ -223,6 +232,7 @@ def convert_to_msk(discord_time_str):
         return discord_time_str
 
 def extract_stock_info_from_embed(embed, message_timestamp):
+    """Извлекает информацию о стоке из EMBED"""
     stock_data = {}
     current_time = ""
     
@@ -258,6 +268,7 @@ def extract_stock_info_from_embed(embed, message_timestamp):
     return stock_data, current_time
 
 def create_telegram_message(stock_data, time_info, is_alert=False):
+    """Создает сообщение для Telegram"""
     if not stock_data:
         return "📭 В последнем сообщении нет данных о стоке"
     
@@ -294,6 +305,7 @@ def create_telegram_message(stock_data, time_info, is_alert=False):
     return message_text
 
 async def send_telegram_alert_to_all(message):
+    """Отправляет уведомление ВСЕМ пользователям бота"""
     if not user_chat_ids:
         print("📭 Нет пользователей для рассылки")
         return
@@ -325,6 +337,7 @@ async def send_telegram_alert_to_all(message):
     print(f"📊 Итог рассылки: отправлено {sent_count}, ошибок: {error_count}")
 
 def monitor_discord():
+    """Мониторинг Discord в отдельном потоке"""
     global current_stock, last_restock_time, last_message_id
     
     print("🕵️ Запускаем мониторинг Discord канала...")
@@ -380,7 +393,45 @@ def monitor_discord():
             print(f"❌ Ошибка мониторинга: {e}")
             time.sleep(30)
 
+# === КОМАНДА /ALL ДЛЯ РАССЫЛКИ ===
+async def admin_broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обрабатывает команду /ALL для рассылки сообщения всем пользователям"""
+    user_id = update.effective_user.id
+    
+    if not context.args:
+        await update.message.reply_text("❌ Использование: /ALL <сообщение>")
+        return
+    
+    message_text = " ".join(context.args)
+    broadcast_message = f"📢 **ОБЪЯВЛЕНИЕ:**\n\n{message_text}"
+    
+    await update.message.reply_text(f"🔄 Начинаю рассылку сообщения для {len(user_chat_ids)} пользователей...")
+    
+    sent_count = 0
+    error_count = 0
+    
+    for chat_id in list(user_chat_ids):
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=broadcast_message,
+                parse_mode='Markdown'
+            )
+            sent_count += 1
+        except Exception as e:
+            print(f"❌ Ошибка отправки пользователю {chat_id}: {e}")
+            error_count += 1
+            user_chat_ids.discard(chat_id)
+    
+    save_users()
+    
+    await update.message.reply_text(
+        f"📊 Рассылка завершена:\n✅ Отправлено: {sent_count}\n❌ Ошибок: {error_count}"
+    )
+
+# === TELEGRAM HANDLERS ===
 async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обрабатывает нажатие кнопки УЗНАТЬ СТОК"""
     print("🎯 Запрос текущего стока от пользователя")
     
     user_id = update.effective_user.id
@@ -421,6 +472,7 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("❌ Не удалось получить сообщение", reply_markup=keyboard)
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обрабатывает команду /start"""
     user_id = update.effective_user.id
     is_subscribed = await check_subscription(user_id)
     
@@ -447,6 +499,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(welcome_text, reply_markup=keyboard)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обрабатывает текстовые сообщения"""
     user_id = update.effective_user.id
     is_subscribed = await check_subscription(user_id)
     
@@ -463,38 +516,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Используй кнопку для проверки стока 🎯", reply_markup=keyboard)
 
 def run_telegram_bot():
-    max_restarts = 3
-    restart_count = 0
+    """Запускает Telegram бота"""
+    telegram_app.add_handler(CommandHandler("start", start_command))
+    telegram_app.add_handler(CommandHandler("all", admin_broadcast_command))
+    telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    telegram_app.add_handler(CallbackQueryHandler(handle_subscription_check, pattern="check_subscription"))
     
-    while restart_count < max_restarts:
-        try:
-            # Пересоздаем application при каждом перезапуске
-            telegram_app = Application.builder().token(TELEGRAM_TOKEN).build()
-            
-            telegram_app.add_handler(CommandHandler("start", start_command))
-            telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-            telegram_app.add_handler(CallbackQueryHandler(handle_subscription_check, pattern="check_subscription"))
-            
-            print(f"📱 Запускаем Telegram бота (попытка {restart_count + 1}/{max_restarts})...")
-            telegram_app.run_polling()
-            
-        except telegram.error.Conflict as e:
-            restart_count += 1
-            print(f"❌ Conflict ошибка: {e}")
-            if restart_count < max_restarts:
-                print("🔄 Перезапускаем бота через 10 секунд...")
-                time.sleep(10)
-            else:
-                print("🚨 Достигнут лимит перезапусков")
-                break
-                
-        except Exception as e:
-            print(f"❌ Критическая ошибка: {e}")
-            break
-    
-    print("💤 Бот завершил работу")
+    print("📱 Запускаем Telegram бота...")
+    telegram_app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 def main():
+    """Главная функция"""
     print("🚀 Запускаем бота...")
     
     load_users()
@@ -506,4 +538,8 @@ def main():
     run_telegram_bot()
 
 if __name__ == "__main__":
+    # ЗАПУСКАЕМ FLASK СЕРВЕР И БОТА
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
     main()
